@@ -1,0 +1,7 @@
+Revision history for Bootylicious::Plugin::AjaxLibLoader
+
+0.04 19-12-2009
+	Prepared for CPAN
+	Fix documentation
+	Set default version prototype=1.6.0.3
+	Set default version dojo=1.3.1   
