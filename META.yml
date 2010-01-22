@@ -10,4 +10,4 @@ meta-spec:
 name: Bootylicious-Plugin-AjaxLibLoader
 requires:
   Mojo: 0.999910
-version: 0.04
+version: 0.05

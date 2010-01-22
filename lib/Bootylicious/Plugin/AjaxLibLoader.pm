@@ -1,175 +1,106 @@
 package Bootylicious::Plugin::AjaxLibLoader;
-
 use strict;
 use warnings;
+use base 'Mojolicious::Plugin';
 
-use base 'Mojo::Base';
-
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 my %AjaxLibs = (
-    'jquery' => [
-        '1.3.2',
-        'http://ajax.googleapis.com/ajax/libs/jquery/%s/jquery.min.js'
-    ],
-    'jqueryui' => [
-        '1.7.2',
-        'http://ajax.googleapis.com/ajax/libs/jqueryui/%s/jquery-ui.min.js'
-    ],
-    'prototype' => [
-        '1.6.0.3',
-        'http://ajax.googleapis.com/ajax/libs/prototype/%s/prototype.js'
-    ],
-    'scriptaculous' => [
-        '1.8.2',
-        'http://ajax.googleapis.com/ajax/libs/scriptaculous/%s/scriptaculous.js'
-    ],
-    'mootools' => [
-        '1.2.3',
-        'http://ajax.googleapis.com/ajax/libs/mootools/%s/mootools-yui-compressed.js'
-    ],
-    'dojo' => [
-        '1.3.1',
-        'http://ajax.googleapis.com/ajax/libs/dojo/%s/dojo/dojo.xd.js'
-    ],
-    'swfobject' => [
-        '2.2',
-        'http://ajax.googleapis.com/ajax/libs/swfobject/%s/swfobject.js'
-    ],
-    'yui' => [
-        '2.7.0',
-        'http://ajax.googleapis.com/ajax/libs/yui/%s/build/yuiloader/yuiloader-min.js'
-    ],
-    'ext_core' => [
-        '3.0.0',
-        'http://ajax.googleapis.com/ajax/libs/ext-core/%s/ext-core.js'
-    ],
+	'jquery' => [
+		'1.3.2', 'http://ajax.googleapis.com/ajax/libs/jquery/%s/jquery.min.js'
+	],
+	'jqueryui' => [
+		'1.7.2',
+		'http://ajax.googleapis.com/ajax/libs/jqueryui/%s/jquery-ui.min.js'
+	],
+	'prototype' => [
+		'1.6.0.3',
+		'http://ajax.googleapis.com/ajax/libs/prototype/%s/prototype.js'
+	],
+	'scriptaculous' => [
+		'1.8.2',
+		'http://ajax.googleapis.com/ajax/libs/scriptaculous/%s/scriptaculous.js'
+	],
+	'mootools' => [
+		'1.2.3',
+'http://ajax.googleapis.com/ajax/libs/mootools/%s/mootools-yui-compressed.js'
+	],
+	'dojo' => [
+		'1.3.1', 'http://ajax.googleapis.com/ajax/libs/dojo/%s/dojo/dojo.xd.js'
+	],
+	'swfobject' => [
+		'2.2', 'http://ajax.googleapis.com/ajax/libs/swfobject/%s/swfobject.js'
+	],
+	'yui' => [
+		'2.7.0',
+'http://ajax.googleapis.com/ajax/libs/yui/%s/build/yuiloader/yuiloader-min.js'
+	],
+	'ext_core' => [
+		'3.0.0', 'http://ajax.googleapis.com/ajax/libs/ext-core/%s/ext-core.js'
+	],
 );
 
-__PACKAGE__->attr([keys %AjaxLibs]);
 
-#set default libs versions and paths
-foreach my $key (keys %AjaxLibs) {
-    __PACKAGE__->attr($key . '_version' => $AjaxLibs{$key}->[0]);
-    __PACKAGE__->attr($key . '_path'    => 'all');
-}
+sub register {
+	my ( $self, $app, $args ) = @_;
+	$args ||= {};
+	$app->plugins->add_hook(
+		after_dispatch => sub {
+			shift;    #Skip Mojolicious::Plugins obj
+			my $c = shift;
+			my ( $is_load, $libs ) = $self->_to_load( $c, $args );
+			return unless $is_load;
+			$c->stash( 'libs_to_load' => $libs );
+			my $load_html = $c->render_partial( 'ajax_load',
+				template_class => 'Bootylicious::Plugin::AjaxLibLoader' );
+			my $body = $c->res->body;
+			$body =~ s/<[hH][eE][aA][dD]>/<head>\n$load_html\n/;
+			$c->res->body($body);
+		  }
 
-
-sub hook_finalize {
-    my $self = shift;
-    my $c    = shift;
-    my ($is_load, $libs) = $self->_to_load($c);
-    return unless $is_load;
-    $c->stash('libs_to_load' => $libs);
-    my $load_html = $c->render_partial('ajax_load',
-        template_class => 'Bootylicious::Plugin::AjaxLibLoader');
-    my $body = $c->res->body;
-    $body =~ s/<[hH][eE][aA][dD]>/<head>\n$load_html\n/;
-    $c->res->body($body);
-
+	);
 }
 
 sub _to_load {
-    my $self = shift;
-    my $c    = shift;
-    my $path = $c->req->url->path;
-    $path =~ s/^\///;
-    my @lib_to_load = ();
-    my $path_for;
-    if ($self->dojo) {
-        $path_for = $self->dojo_path;
-        if ($path_for eq 'all' or $path =~ /^(?:$path_for)/) {
-            push(@lib_to_load,
-                {'lib' => 'dojo', 'version' => $self->dojo_version});
-        }
-    }
+	my $self = shift;
+	my $c    = shift;
+	my $args = shift || {};
+	my $path = $c->req->url->path;
+	$path =~ s/^\///;
+	my @lib_to_load = ();
+	foreach my $lib ( keys %AjaxLibs ) {
+		if ( exists $args->{$lib} ) {
+			my $path_for = $args->{ $lib . '_path' } || 'all';
+			if ( $path_for eq 'all' or $path =~ /^(?:$path_for)/ ) {
+				push(
+					@lib_to_load,
+					{
+						'lib'     => $lib,
+						'version' => $args->{ $lib . '_version' }
+						  || $AjaxLibs{$lib}->[0]
+					}
+				);
+			}
 
-    if ($self->ext_core) {
-        $path_for = $self->ext_core_path;
-        if ($path_for eq 'all' or $path =~ /^(?:$path_for)/) {
-            push(@lib_to_load,
-                {'lib' => 'ext_core', 'version' => $self->ext_core_version});
-        }
-    }
+		}
+	}
 
-    if ($self->jquery) {
-        $path_for = $self->jquery_path;
-        if ($path_for eq 'all' or $path =~ /^(?:$path_for)/) {
-            push(@lib_to_load,
-                {'lib' => 'jquery', 'version' => $self->jquery_version});
-        }
-    }
+	my $is_load = scalar(@lib_to_load);
+	return () unless $is_load;
 
-    if ($self->jqueryui) {
-        $path_for = $self->jqueryui_path;
-        if ($path_for eq 'all' or $path =~ /^(?:$path_for)/) {
-            push(@lib_to_load,
-                {'lib' => 'jqueryui', 'version' => $self->jqueryui_version});
-        }
-    }
+	#build libs url
+	foreach my $l (@lib_to_load) {
+		$l->{'src_url'} = $self->_build_src_url($l);
 
-    if ($self->mootools) {
-        $path_for = $self->mootools_path;
-        if ($path_for eq 'all' or $path =~ /^(?:$path_for)/) {
-            push(@lib_to_load,
-                {'lib' => 'mootools', 'version' => $self->mootools_version});
-        }
-    }
+	}
 
-    if ($self->prototype) {
-        $path_for = $self->prototype_path;
-        if ($path_for eq 'all' or $path =~ /^(?:$path_for)/) {
-            push(@lib_to_load,
-                {'lib' => 'prototype', 'version' => $self->prototype_version}
-            );
-        }
-    }
-
-    if ($self->scriptaculous) {
-        $path_for = $self->scriptaculous_path;
-        if ($path_for eq 'all' or $path =~ /^(?:$path_for)/) {
-            push(
-                @lib_to_load,
-                {   'lib'     => 'scriptaculous',
-                    'version' => $self->scriptaculous_version
-                }
-            );
-        }
-    }
-
-    if ($self->swfobject) {
-        $path_for = $self->swfobject_path;
-        if ($path_for eq 'all' or $path =~ /^(?:$path_for)/) {
-            push(@lib_to_load,
-                {'lib' => 'swfobject', 'version' => $self->swfobject_version}
-            );
-        }
-    }
-
-    if ($self->yui) {
-        $path_for = $self->yui_path;
-        if ($path_for eq 'all' or $path =~ /^(?:$path_for)/) {
-            push(@lib_to_load,
-                {'lib' => 'yui', 'version' => $self->yui_version});
-        }
-    }
-
-    my $is_load = scalar(@lib_to_load);
-    return () unless $is_load;
-
-    #build libs url
-    foreach my $l (@lib_to_load) {
-        $l->{'src_url'} = $self->_build_src_url($l);
-
-    }
-
-    return ($is_load, \@lib_to_load);
+	return ( $is_load, \@lib_to_load );
 }
 
 sub _build_src_url {
-    my $self = shift;
-    my $data = shift;
-    return sprintf($AjaxLibs{$data->{'lib'}}->[1], $data->{'version'});
+	my $self = shift;
+	my $data = shift;
+	return sprintf( $AjaxLibs{ $data->{'lib'} }->[1], $data->{'version'} );
 }
 
 1;
@@ -193,7 +124,7 @@ L<Bootylicious::Plugin::AjaxLibLoader> - this plugin provides your Bootylicious 
 
 =head1 VERSION
 
-version 0.04
+version 0.05
 
 =head1 SYNOPSIS
 
@@ -202,12 +133,17 @@ like this:
 
     #load JQuery version 1.3.2 for all Bootylicious blog pages
 
-    plugins=ajax_lib_Loader:jquery=on=jquery_version=1.3.2=jquery_path=all
+    "plugins" : [
+		 "ajax_lib_loader" , {"jquery" : "on", "jquery_version" : "1.3.2"}
+	]
 
     #OR load JQuery version 1.3.2 for all  pages and JQuery UI only for article pages:
 
-    plugins=ajax_lib_Loader:jquery=on=jquery_version=1.3.2=jquery_path=all=jqueryui=on=jqueryui_path=articles
-
+     "plugins" : [
+		 "ajax_lib_loader" , {"jquery" : "on", "jquery_version" : "1.3.2", jquery_path=all,
+		 						"jqueryui" : "on", "jqueryui_path" : "articles"
+		 					}]
+   
 =head1 Ajax libraries
 
     * Dojo
@@ -347,10 +283,12 @@ Config line example:
 	]
 
 =head1 METHODS
+
+=head2 C<register>
  
-=head2 C<hook_finalize>
- 
-Plugin is run just after L<bootylicious> routes finalization.    
+This method will be called by L<Mojolicious::Plugins> at startup time,
+your plugin should use this to hook into the application.  
+
 
 =head1 AUTHOR
 
